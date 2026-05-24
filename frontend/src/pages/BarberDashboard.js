@@ -24,6 +24,7 @@ function BarberDashboard() {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
+  const [selectedAppointmentDetails, setSelectedAppointmentDetails] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -142,8 +143,15 @@ function BarberDashboard() {
   const updateAptStatus = async (id, status) => {
     try {
       if (status === "completed") {
-        // Should checkout instead of generic update directly
         const apt = appointments.find(a => a._id === id);
+        
+        if (apt.paymentStatus === 'paid' || apt.paymentStatus === 'completed') {
+           await appointmentAPI.updateAppointment(id, { status: "completed" });
+           fetchAppointments(user);
+           return;
+        }
+
+        // Should checkout instead of generic update directly
         setCheckoutApt(apt);
         setVoucherCode("");
         setPaymentMethod("cash");
@@ -267,19 +275,19 @@ function BarberDashboard() {
                   <h3 className="text-xl font-bold text-white">{user.name}</h3>
                   <p className="text-[#1754cf] font-medium text-sm mt-1">{Array.isArray(user.specialty) ? user.specialty.join(", ") : (user.specialty || "Professional Barber")}</p>
                   <p className="text-[#c3c6d6] text-sm mt-2">{user.phone || "No phone added"}</p>
-                   
-                   {/* Star Rating Display */}
-                   <div className="flex items-center justify-center gap-1 mt-3">
-                      <div className="flex text-yellow-400">
-                        {[...Array(5)].map((_, i) => (
-                          <span key={i} className="text-lg">
-                            {i < Math.floor(ratingInfo.avgRating) ? "★" : "☆"}
-                          </span>
-                        ))}
-                      </div>
-                      <span className="text-white font-bold text-sm ml-1">{ratingInfo.avgRating}</span>
-                      <span className="text-[#c3c6d6] text-xs ml-1">({ratingInfo.reviewCount})</span>
-                   </div>
+
+                  {/* Star Rating Display */}
+                  <div className="flex items-center justify-center gap-1 mt-3">
+                    <div className="flex text-yellow-400">
+                      {[...Array(5)].map((_, i) => (
+                        <span key={i} className="text-lg">
+                          {i < Math.floor(ratingInfo.avgRating) ? "★" : "☆"}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="text-white font-bold text-sm ml-1">{ratingInfo.avgRating}</span>
+                    <span className="text-[#c3c6d6] text-xs ml-1">({ratingInfo.reviewCount})</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -409,13 +417,21 @@ function BarberDashboard() {
                           {new Date(apt.appointmentDate).toLocaleDateString("vi-VN")}
                         </p>
                       </div>
-                      <span
-                        className={`px-3 py-1 rounded border text-[10px] font-bold uppercase tracking-widest ${getStatusColor(
-                          apt.status
-                        )}`}
-                      >
-                        {apt.status}
-                      </span>
+                      <div className="flex flex-col gap-2 items-end">
+                        <span
+                          className={`px-3 py-1 rounded border text-[10px] font-bold uppercase tracking-widest ${getStatusColor(
+                            apt.status
+                          )}`}
+                        >
+                          {apt.status}
+                        </span>
+                        <span className={`px-3 py-1 rounded border text-[10px] font-bold uppercase tracking-widest ${(apt.paymentStatus === 'paid' || apt.paymentStatus === 'completed')
+                              ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                              : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                            }`}>
+                          {(apt.paymentStatus === 'paid' || apt.paymentStatus === 'completed') ? 'Đã Thanh Toán' : 'Chưa Thanh Toán'}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="border-t border-[#282a31] pt-4">
@@ -423,7 +439,7 @@ function BarberDashboard() {
                         {apt.customerId?.name || "Walk-in Customer"}
                       </h3>
                       <p className="text-[#c3c6d6] text-sm mb-3 opacity-80">
-                        {apt.serviceId?.name || "General Service"}
+                        {apt.serviceIds && apt.serviceIds.length > 0 ? apt.serviceIds[0].name + (apt.serviceIds.length > 1 ? ` (+${apt.serviceIds.length - 1})` : '') : "General Service"}
                       </p>
 
                       {apt.notes && (
@@ -444,6 +460,12 @@ function BarberDashboard() {
                           <option value="cancelled">Cancelled</option>
                           <option value="completed">✔ Hoàn thành (Thanh toán)</option>
                         </select>
+                        <button
+                          onClick={() => setSelectedAppointmentDetails(apt)}
+                          className="bg-[#1754cf]/20 text-[#1754cf] hover:bg-[#1754cf] hover:text-white px-3 py-2 rounded-lg text-xs font-bold border border-[#1754cf]/30 transition-colors"
+                        >
+                          Chi tiết
+                        </button>
                         <button
                           onClick={() => updateAptStatus(apt._id, "completed")}
                           className="bg-green-500/10 text-green-400 hover:bg-green-500/20 px-4 py-2 rounded-lg text-xs font-bold border border-green-500/20 transition-colors ml-auto"
@@ -480,11 +502,19 @@ function BarberDashboard() {
             ) : (
               <div className="overflow-y-auto p-4 space-y-3 custom-scrollbar flex-1">
                 {history.map((apt) => (
-                  <div key={apt._id} className="p-4 bg-[#111621] rounded-lg border border-[#282a31]/50 hover:border-[#282a31] transition-colors">
+                  <div key={apt._id} onClick={() => setSelectedAppointmentDetails(apt)} className="p-4 bg-[#111621] rounded-lg border border-[#282a31]/50 hover:border-[#282a31] transition-colors cursor-pointer group">
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <h4 className="text-white font-bold text-sm">{apt.customerId?.name || "Walk-in"}</h4>
-                        <p className="text-[#c3c6d6] text-xs mt-0.5">{apt.serviceId?.name || "General"}</p>
+                        <h4 className="text-white font-bold text-sm group-hover:text-[#1754cf] transition-colors">{apt.customerId?.name || "Walk-in"}</h4>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-[#c3c6d6] text-xs">{apt.serviceIds && apt.serviceIds.length > 0 ? apt.serviceIds[0].name + (apt.serviceIds.length > 1 ? ` (+${apt.serviceIds.length - 1})` : '') : "General"}</p>
+                          <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border ${(apt.paymentStatus === 'paid' || apt.paymentStatus === 'completed')
+                              ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                              : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                            }`}>
+                            {(apt.paymentStatus === 'paid' || apt.paymentStatus === 'completed') ? 'Đã TT' : 'Chưa TT'}
+                          </span>
+                        </div>
                       </div>
                       <span
                         className={`px-2 py-0.5 rounded border text-[9px] font-bold uppercase tracking-widest ${getStatusColor(
@@ -595,6 +625,102 @@ function BarberDashboard() {
                   {checkoutLoading ? "Đang xử lý..." : "Xác nhận & Hoàn tất"}
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Appointment Details Modal */}
+      <AnimatePresence>
+        {selectedAppointmentDetails && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-[#1c2230] w-full max-w-2xl rounded-2xl border border-[#282a31] p-0 overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              {/* Modal Header */}
+              <div className="p-6 border-b border-[#282a31] flex justify-between items-center bg-[#111621]">
+                <div>
+                  <h3 className="text-xl font-bold text-white uppercase tracking-widest">Chi tiết Đơn Hàng</h3>
+                  <p className="text-[#1754cf] font-bold text-sm mt-1">{selectedAppointmentDetails.appointmentId}</p>
+                </div>
+                <button onClick={() => setSelectedAppointmentDetails(null)} className="text-[#c3c6d6] hover:text-white text-3xl font-light">&times;</button>
+              </div>
+              
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto flex-grow space-y-6 custom-scrollbar">
+                
+                {/* Customer Info */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-[#111621] border border-[#282a31] p-4 rounded-xl col-span-2">
+                    <p className="text-[#c3c6d6] text-[10px] font-bold uppercase tracking-widest mb-1">Khách Hàng</p>
+                    <p className="text-white font-bold text-base">{selectedAppointmentDetails.customerId?.name || "Khách Vãng Lai"}</p>
+                    <p className="text-[#c3c6d6] text-sm mt-1">{selectedAppointmentDetails.customerId?.email || "Không có email"}</p>
+                  </div>
+                </div>
+
+                {/* Time Info */}
+                <div className="flex gap-4">
+                  <div className="flex-1 bg-[#1754cf]/10 border border-[#1754cf]/30 p-4 rounded-xl flex items-center gap-4">
+                    <div className="text-2xl">📅</div>
+                    <div>
+                      <p className="text-[#1754cf] text-[10px] font-bold uppercase tracking-widest mb-1">Thời Gian Khách Đến</p>
+                      <p className="text-white font-bold text-lg">
+                        {new Date(selectedAppointmentDetails.appointmentDate).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                        <span className="text-[#c3c6d6] text-sm ml-2 font-normal">
+                          - {new Date(selectedAppointmentDetails.appointmentDate).toLocaleDateString('vi-VN')}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Services List */}
+                <div>
+                  <p className="text-[#c3c6d6] text-[10px] font-bold uppercase tracking-widest mb-3">Dịch Vụ Đã Chọn ({selectedAppointmentDetails.serviceIds?.length || 0})</p>
+                  <div className="space-y-3">
+                    {selectedAppointmentDetails.serviceIds && selectedAppointmentDetails.serviceIds.map(service => (
+                      <div key={service._id} className="bg-[#111621] border border-[#282a31] p-4 rounded-xl flex items-center justify-between">
+                         <div className="flex items-center gap-4">
+                            {service.image ? (
+                               <img src={service.image} alt="" className="w-12 h-12 rounded object-cover border border-[#282a31]" />
+                            ) : (
+                               <div className="w-12 h-12 bg-[#1c2230] rounded border border-[#282a31] flex items-center justify-center text-xl">✂️</div>
+                            )}
+                            <div>
+                              <p className="text-white font-bold text-sm">{service.name}</p>
+                              <p className="text-[#c3c6d6] text-[10px] uppercase tracking-wider">{service.duration} Phút</p>
+                            </div>
+                         </div>
+                         <p className="text-[#1754cf] font-bold">{Number(service.price).toLocaleString()}đ</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Notes */}
+                {selectedAppointmentDetails.notes && (
+                  <div>
+                    <p className="text-[#c3c6d6] text-[10px] font-bold uppercase tracking-widest mb-2">Ghi Chú Của Khách</p>
+                    <div className="bg-yellow-500/10 border border-yellow-500/30 p-4 rounded-xl">
+                      <p className="text-yellow-500 text-sm italic">"{selectedAppointmentDetails.notes}"</p>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-6 bg-[#111621] border-t border-[#282a31] flex items-center justify-between">
+                 <div>
+                    <p className="text-[#c3c6d6] text-xs font-bold uppercase tracking-widest mb-1">Tổng Tiền</p>
+                    <p className="text-green-400 font-bold text-2xl">{Number(selectedAppointmentDetails.totalPrice || 0).toLocaleString()}đ</p>
+                 </div>
+                 <button onClick={() => setSelectedAppointmentDetails(null)} className="px-6 py-3 bg-[#282a31] hover:bg-[#33343c] text-white font-bold rounded-xl transition-colors">Đóng Lại</button>
+              </div>
+
             </motion.div>
           </div>
         )}
